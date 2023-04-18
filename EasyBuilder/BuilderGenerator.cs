@@ -35,8 +35,9 @@ namespace EasyBuilder.NET
 
     internal static class BuilderAttributesConstants
     {
-        public const string BuilderAttributeFullName = "EasyBuilder.NET.Attributes.BuilderAttribute";
-        public const string BuilderIgnoreMemberFullName = "EasyBuilder.NET.Attributes.BuilderIgnoreMemberAttribute";
+        public const string BuilderAttributeFullName = "EasyBuilder.NET.Attributes.Builder";
+        public const string BuilderIgnoreMemberFullName = "EasyBuilder.NET.Attributes.Builder.IgnoreMember";
+        public const string BuilderDefaultValueFullName = "EasyBuilder.NET.Attributes.Builder.DefaultValue";
     }
 
     internal static class BuilderDeclarationLoader
@@ -120,7 +121,7 @@ namespace EasyBuilder.NET
             var constructorSetters = members
                 .Select(m =>
                 {
-                    return $"this.{m.GetName()} = builder.{m.GetLocalField()};";
+                    return $"this.{m.GetName()} = builder.{m.GetField()};";
                 })
                 .Aggregate((a, b) => a + "\n" + b);
 
@@ -143,17 +144,9 @@ namespace EasyBuilder.NET
             var builderClassMembers = members
                 .Select(m =>
                 {
-                    var type = m.GetDisplayType();
-                    var localField = m.GetLocalField();
-                    var methodField = m.GetMethodField();
-
                     return $$"""
-                        internal {{type}} {{localField}};
-
-                        public {{builderClassName}} {{m.GetMethod()}} ({{type}} {{methodField}}) {
-                            this.{{localField}} = {{methodField}};
-                            return this;
-                        }
+                        {{m.GetDisplayField()}}
+                        {{m.GetDisplayMethod(builderClassName)}}
                     """;
                 })
                 .Aggregate((a, b) => a + "\n" + b);
@@ -178,11 +171,13 @@ namespace EasyBuilder.NET
     internal interface IComplexMember
     {
         string GetName();
-        string GetLocalField();
-        string GetMethodField();
-        string GetMethod();
-        string GetMethodSetter();
-        string GetDisplayType();
+        string GetField();
+
+        string GetDisplayMethod(string builderClassName);
+        string GetDisplayField();
+
+        bool HasDefaultValue { get; }
+        string DefaultValue { get; }
     }
 
     internal static class ComplexMembers
@@ -200,6 +195,8 @@ namespace EasyBuilder.NET
     {
         public PropertyDeclarationSyntax Syntax { get; init; }
         public IPropertySymbol Symbol { get; init; }
+        public bool HasDefaultValue { get; init; }
+        public string? DefaultValue { get; init; }
 
         internal static ComplexProperty Of(PropertyDeclarationSyntax syntax, SemanticModel model)
         {
@@ -207,85 +204,116 @@ namespace EasyBuilder.NET
             if (symbol == null || symbol is not IPropertySymbol propertySymbol)
                 return null;
 
+            var hasDefaultValue = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderDefaultValueFullName));
+            string defaultValue = hasDefaultValue ? syntax.ChildNodes()
+                .OfType<EqualsValueClauseSyntax>()
+                .FirstOrDefault()
+                ?.Value
+                ?.ToString() : null;
+
             return new ComplexProperty
             {
                 Syntax = syntax,
-                Symbol = propertySymbol
+                Symbol = propertySymbol,
+                HasDefaultValue = hasDefaultValue,
+                DefaultValue = defaultValue
             };
         }
 
         public string GetName()
             => Syntax.Identifier.ValueText;
 
-        public string GetMethodField()
-            => GetName();
+        public string GetField()
+            => $"_{GetName()}";
 
-        public string GetLocalField()
-            => $"_{GetMethodField()}";
+        public string GetDisplayField()
+        {
+            var defaultValue = HasDefaultValue ? $" = {DefaultValue}" : null;
+            return $"internal {GetDisplayType()} {GetField()}{defaultValue};";
+        }
 
-        public string GetMethod()
+        public string GetDisplayMethod(string builderClassName)
+            => $$"""
+                public {{builderClassName}} {{GetDisplayMethodName()}} ({{GetDisplayType()}} {{GetName()}}) {
+                    this.{{GetField()}} = {{GetName()}};
+                    return this;
+                }
+            """;
+
+        private string GetDisplayType()
+            => Symbol.Type.ToDisplayString();
+
+        private string GetDisplayMethodName()
         {
             var name = Syntax.Identifier.ValueText;
             var first = name[0];
             return $"{first.ToString().ToUpper()}{name.Substring(1)}";
         }
-
-        public string GetMethodSetter()
-            => $"this.{GetLocalField()} = {GetMethodField()}";
-
-
-        public string GetDisplayType()
-            => Symbol.Type.ToDisplayString();
     }
 
     internal record ComplexField : IComplexMember
     {
         public FieldDeclarationSyntax Syntax { get; init; }
         public IFieldSymbol Symbol { get; init; }
+        public VariableDeclaratorSyntax Declarator { get; init; }
+        public bool HasDefaultValue { get; init; }
+        public string? DefaultValue { get; init; }
 
         internal static ComplexField Of(FieldDeclarationSyntax syntax, SemanticModel model)
         {
-            var symbol = syntax.Declaration.Variables
-                .Select(v => model.GetDeclaredSymbol(v))
-                .OfType<IFieldSymbol>()
+            var declarator = syntax.Declaration.Variables
                 .FirstOrDefault();
+            var symbol = model.GetDeclaredSymbol(declarator) as IFieldSymbol;
 
-            if (symbol == null)
+            if (declarator == null || symbol == null)
                 return null;
+
+            var hasDefaultValue = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderDefaultValueFullName));
+            string defaultValue = hasDefaultValue ? declarator.ChildNodes()
+                .OfType<EqualsValueClauseSyntax>()
+                .FirstOrDefault()
+                ?.Value
+                ?.ToString() : null;
 
             return new ComplexField
             {
                 Syntax = syntax,
-                Symbol = symbol
+                Symbol = symbol,
+                HasDefaultValue = hasDefaultValue,
+                DefaultValue = defaultValue,
+                Declarator = declarator
             };
         }
 
-        private VariableDeclaratorSyntax? GetDeclarator()
-            => Syntax.Declaration.ChildNodes()
-                .OfType<VariableDeclaratorSyntax>()
-                .FirstOrDefault();
-
         public string GetName()
-            => GetDeclarator()?.Identifier.ValueText;
+            => Declarator.Identifier.ValueText;
 
-        public string GetMethodField()
-            => GetName();
+        public string GetField()
+            => $"_{GetName()}";
 
-        public string GetLocalField()
-            => $"_{GetMethodField()}";
-
-        public string GetMethod()
+        public string GetDisplayField()
         {
-            var name = GetDeclarator()?.Identifier.ValueText; ;
+            var defaultValue = HasDefaultValue ? $" = {DefaultValue}" : null;
+            return $"internal {GetDisplayType()} {GetField()}{defaultValue};";
+        }
+
+        public string GetDisplayMethod(string builderClassName)
+            => $$"""
+                public {{builderClassName}} {{GetDisplayMethodName()}} ({{GetDisplayType()}} {{GetName()}}) {
+                    this.{{GetField()}} = {{GetName()}};
+                    return this;
+                }
+            """;
+
+        private string GetDisplayType()
+            => Symbol.Type.ToDisplayString();
+
+        private string GetDisplayMethodName()
+        {
+            var name = Declarator.Identifier.ValueText;
             var first = name[0];
             return $"{first.ToString().ToUpper()}{name.Substring(1)}";
         }
-
-        public string GetMethodSetter()
-            => $"this.{GetLocalField()} = {GetMethodField()}";
-
-        public string GetDisplayType()
-            => Symbol.Type.ToDisplayString();
     }
 
     internal static class ClassDeclarationSyntaxEntesions

@@ -3,7 +3,9 @@
 var person = Person.Builder()
     .Name("Vitor")
     .Age(18)
-    .A("dsadsa")
+    .Parent(Person.Builder()
+        .Name("Jackson")
+        .Build())
     .Build();
 
 Console.WriteLine(person.name);

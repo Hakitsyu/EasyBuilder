@@ -10,13 +10,14 @@ namespace EasyBuilders.Tests
     [Builder]
     public partial class Person
     {
-        public string name;
+        [Builder.DefaultValue]
+        public string Name { get; set; } = "Default name";
 
-        private int age;
+        private int Age { get; set; }
 
-        [BuilderIgnoreMember]
-        private double height;
+        [Builder.IgnoreMember]
+        private double Height { get; set; }
 
-        public string A { get; set; }
+        public Person Parent { get; set; }
     }
 }
