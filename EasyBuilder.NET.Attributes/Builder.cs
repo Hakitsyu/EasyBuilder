@@ -25,5 +25,10 @@ namespace EasyBuilder.NET.Attributes
 
             public string Name { get; set; }
         }
+
+        [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false)]
+        public class IsRequired : Attribute
+        {
+        }
     }
 }

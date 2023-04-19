@@ -40,6 +40,7 @@ namespace EasyBuilder.NET
         public const string BuilderIgnoreMemberFullName = "EasyBuilder.NET.Attributes.Builder.IgnoreMember";
         public const string BuilderDefaultValueFullName = "EasyBuilder.NET.Attributes.Builder.DefaultValue";
         public const string BuilderMethodNameFullName = "EasyBuilder.NET.Attributes.Builder.MethodName";
+        public const string BuilderIsRequiredFullName = "EasyBuilder.NET.Attributes.Builder.IsRequired";
     }
 
     internal static class BuilderDeclarationLoader
@@ -123,7 +124,13 @@ namespace EasyBuilder.NET
             var constructorSetters = members
                 .Select(m =>
                 {
-                    return $"this.{m.GetName()} = builder.{m.GetField()};";
+                    return $$"""
+                        {{(m.IsRequired ? $$"""
+                            if (!builder.{{m.GetRequiredField()}})
+                                throw new System.ArgumentNullException("'{{m.GetName()}}' is required");
+                        """ : null)}}
+                        this.{{m.GetName()}} = builder.{{m.GetField()}};
+                    """;
                 })
                 .Aggregate((a, b) => a + "\n" + b);
 
@@ -147,6 +154,7 @@ namespace EasyBuilder.NET
                 .Select(m =>
                 {
                     return $$"""
+                        {{(m.IsRequired ? m.GetDisplayRequiredField() : null)}}
                         {{m.GetDisplayField()}}
                         {{m.GetDisplayMethod(builderClassName)}}
                     """;
@@ -173,15 +181,18 @@ namespace EasyBuilder.NET
     internal interface IComplexMember
     {
         string GetName();
+        string GetRequiredField();
         string GetField();
 
         string GetDisplayMethod(string builderClassName);
+        string GetDisplayRequiredField();
         string GetDisplayField();
 
         bool HasDefaultValue { get; }
         string? DefaultValue { get; }
         bool HasDefaultMethodName { get; }
         string? DefaultMethodName { get; }
+        bool IsRequired { get; }
     }
 
     internal static class ComplexMembers
@@ -203,6 +214,7 @@ namespace EasyBuilder.NET
         public string? DefaultValue { get; init; }
         public bool HasDefaultMethodName { get; init; }
         public string? DefaultMethodName { get; init; }
+        public bool IsRequired { get; init; }
 
         internal static ComplexProperty Of(PropertyDeclarationSyntax syntax, SemanticModel model)
         {
@@ -222,6 +234,8 @@ namespace EasyBuilder.NET
                 ?.GetDefaultValueString()
                 : null;
 
+            var isRequired = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderIsRequiredFullName));
+
             return new ComplexProperty
             {
                 Syntax = syntax,
@@ -229,7 +243,8 @@ namespace EasyBuilder.NET
                 HasDefaultValue = hasDefaultValue,
                 DefaultValue = defaultValue,
                 HasDefaultMethodName = hasDefaultMethodName,
-                DefaultMethodName = defaultMethodName
+                DefaultMethodName = defaultMethodName,
+                IsRequired = isRequired
             };
         }
 
@@ -239,15 +254,22 @@ namespace EasyBuilder.NET
         public string GetField()
             => $"_{GetName()}";
 
+        public string GetRequiredField()
+            => $"_required{GetName()}";
+
         public string GetDisplayField()
         {
             var defaultValue = HasDefaultValue ? $" = {DefaultValue}" : null;
             return $"internal {GetDisplayType()} {GetField()}{defaultValue};";
         }
 
+        public string GetDisplayRequiredField()
+            => $"internal bool {GetRequiredField()} = false;";
+
         public string GetDisplayMethod(string builderClassName)
             => $$"""
                 public {{builderClassName}} {{GetDisplayMethodName()}} ({{GetDisplayType()}} {{GetName()}}) {
+                    {{(this.IsRequired ? $"this.{GetRequiredField()} = true;" : null)}}
                     this.{{GetField()}} = {{GetName()}};
                     return this;
                 }
@@ -276,6 +298,7 @@ namespace EasyBuilder.NET
         public string? DefaultValue { get; init; }
         public bool HasDefaultMethodName { get; init; }
         public string? DefaultMethodName { get; init; }
+        public bool IsRequired { get; init; }
 
         internal static ComplexField Of(FieldDeclarationSyntax syntax, SemanticModel model)
         {
@@ -298,6 +321,8 @@ namespace EasyBuilder.NET
                 ?.GetDefaultValueString()
                 : null;
 
+            var isRequired = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderIsRequiredFullName));
+
             return new ComplexField
             {
                 Syntax = syntax,
@@ -306,7 +331,8 @@ namespace EasyBuilder.NET
                 DefaultValue = defaultValue,
                 Declarator = declarator,
                 HasDefaultMethodName = hasDefaultMethodName,
-                DefaultMethodName = defaultMethodName
+                DefaultMethodName = defaultMethodName,
+                IsRequired = isRequired
             };
         }
 
@@ -316,11 +342,17 @@ namespace EasyBuilder.NET
         public string GetField()
             => $"_{GetName()}";
 
+        public string GetRequiredField()
+            => $"_required{GetName()}";
+
         public string GetDisplayField()
         {
             var defaultValue = HasDefaultValue ? $" = {DefaultValue}" : null;
             return $"internal {GetDisplayType()} {GetField()}{defaultValue};";
         }
+
+        public string GetDisplayRequiredField()
+            => $"internal bool {GetRequiredField()} = false;";
 
         public string GetDisplayMethod(string builderClassName)
             => $$"""

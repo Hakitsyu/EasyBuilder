@@ -12,8 +12,10 @@ namespace EasyBuilders.Tests
     {
         [Builder.DefaultValue]
         [Builder.MethodName("WithName")]
+        [Builder.IsRequired]
         public string Name { get; set; } = "Default name";
 
+        [Builder.IsRequired]
         private int Age { get; set; }
 
         [Builder.IgnoreMember]
