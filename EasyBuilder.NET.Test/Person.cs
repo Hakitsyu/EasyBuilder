@@ -11,6 +11,7 @@ namespace EasyBuilders.Tests
     public partial class Person
     {
         [Builder.DefaultValue]
+        [Builder.MethodName("WithName")]
         public string Name { get; set; } = "Default name";
 
         private int Age { get; set; }
@@ -19,5 +20,7 @@ namespace EasyBuilders.Tests
         private double Height { get; set; }
 
         public Person Parent { get; set; }
+
+        public List<string> Names { get; set; }
     }
 }

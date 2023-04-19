@@ -1,11 +1,10 @@
 ﻿using EasyBuilders.Tests;
 
 var person = Person.Builder()
-    .Name("Vitor")
+    .WithName("Vitor")
     .Age(18)
     .Parent(Person.Builder()
-        .Name("Jackson")
+        .WithName("Jackson")
         .Build())
     .Build();
 
-Console.WriteLine(person.name);

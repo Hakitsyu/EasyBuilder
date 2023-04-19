@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
@@ -38,6 +39,7 @@ namespace EasyBuilder.NET
         public const string BuilderAttributeFullName = "EasyBuilder.NET.Attributes.Builder";
         public const string BuilderIgnoreMemberFullName = "EasyBuilder.NET.Attributes.Builder.IgnoreMember";
         public const string BuilderDefaultValueFullName = "EasyBuilder.NET.Attributes.Builder.DefaultValue";
+        public const string BuilderMethodNameFullName = "EasyBuilder.NET.Attributes.Builder.MethodName";
     }
 
     internal static class BuilderDeclarationLoader
@@ -177,7 +179,9 @@ namespace EasyBuilder.NET
         string GetDisplayField();
 
         bool HasDefaultValue { get; }
-        string DefaultValue { get; }
+        string? DefaultValue { get; }
+        bool HasDefaultMethodName { get; }
+        string? DefaultMethodName { get; }
     }
 
     internal static class ComplexMembers
@@ -197,6 +201,8 @@ namespace EasyBuilder.NET
         public IPropertySymbol Symbol { get; init; }
         public bool HasDefaultValue { get; init; }
         public string? DefaultValue { get; init; }
+        public bool HasDefaultMethodName { get; init; }
+        public string? DefaultMethodName { get; init; }
 
         internal static ComplexProperty Of(PropertyDeclarationSyntax syntax, SemanticModel model)
         {
@@ -211,12 +217,19 @@ namespace EasyBuilder.NET
                 ?.Value
                 ?.ToString() : null;
 
+            var hasDefaultMethodName = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderMethodNameFullName));
+            string defaultMethodName = hasDefaultMethodName ? syntax.GetAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderMethodNameFullName))
+                ?.GetDefaultValueString()
+                : null;
+
             return new ComplexProperty
             {
                 Syntax = syntax,
                 Symbol = propertySymbol,
                 HasDefaultValue = hasDefaultValue,
-                DefaultValue = defaultValue
+                DefaultValue = defaultValue,
+                HasDefaultMethodName = hasDefaultMethodName,
+                DefaultMethodName = defaultMethodName
             };
         }
 
@@ -245,6 +258,9 @@ namespace EasyBuilder.NET
 
         private string GetDisplayMethodName()
         {
+            if (HasDefaultMethodName)
+                return DefaultMethodName;
+
             var name = Syntax.Identifier.ValueText;
             var first = name[0];
             return $"{first.ToString().ToUpper()}{name.Substring(1)}";
@@ -258,6 +274,8 @@ namespace EasyBuilder.NET
         public VariableDeclaratorSyntax Declarator { get; init; }
         public bool HasDefaultValue { get; init; }
         public string? DefaultValue { get; init; }
+        public bool HasDefaultMethodName { get; init; }
+        public string? DefaultMethodName { get; init; }
 
         internal static ComplexField Of(FieldDeclarationSyntax syntax, SemanticModel model)
         {
@@ -275,13 +293,20 @@ namespace EasyBuilder.NET
                 ?.Value
                 ?.ToString() : null;
 
+            var hasDefaultMethodName = syntax.AnyAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderMethodNameFullName));
+            string defaultMethodName = hasDefaultMethodName ? syntax.GetAttribute(a => model.EqualsAttribute(a, BuilderAttributesConstants.BuilderMethodNameFullName))
+                ?.GetDefaultValueString()
+                : null;
+
             return new ComplexField
             {
                 Syntax = syntax,
                 Symbol = symbol,
                 HasDefaultValue = hasDefaultValue,
                 DefaultValue = defaultValue,
-                Declarator = declarator
+                Declarator = declarator,
+                HasDefaultMethodName = hasDefaultMethodName,
+                DefaultMethodName = defaultMethodName
             };
         }
 
@@ -310,6 +335,9 @@ namespace EasyBuilder.NET
 
         private string GetDisplayMethodName()
         {
+            if (HasDefaultMethodName)
+                return DefaultMethodName;
+
             var name = Declarator.Identifier.ValueText;
             var first = name[0];
             return $"{first.ToString().ToUpper()}{name.Substring(1)}";
@@ -341,11 +369,17 @@ namespace EasyBuilder.NET
 
     internal static class MemberDeclarationSyntaxEntesions 
     {
-        internal static bool AnyAttribute(this MemberDeclarationSyntax classSyntax)
-            => classSyntax.AttributeLists.Any(l => l.Attributes.Any());
+        internal static bool AnyAttribute(this MemberDeclarationSyntax memberSyntax)
+            => memberSyntax.AttributeLists.Any(l => l.Attributes.Any());
 
-        internal static bool AnyAttribute(this MemberDeclarationSyntax classSyntax, Func<AttributeSyntax, bool> predicate)
-            => classSyntax.AttributeLists.Any(l => l.Attributes.Any(predicate));
+        internal static bool AnyAttribute(this MemberDeclarationSyntax memberSyntax, Func<AttributeSyntax, bool> predicate)
+            => memberSyntax.AttributeLists.Any(l => l.Attributes.Any(predicate));
+
+        internal static AttributeSyntax GetAttribute(this MemberDeclarationSyntax memberSyntax, Func<AttributeSyntax, bool> predicate)
+            => memberSyntax.AttributeLists
+                .Select(l => l.Attributes.FirstOrDefault(predicate))
+                .Where(a => a != null)
+                .FirstOrDefault();
     }
 
     internal static class SemanticModelExtensions
@@ -359,5 +393,19 @@ namespace EasyBuilder.NET
             var namedSymbol = symbol.ContainingType;
             return namedSymbol.ToDisplayString() == attributeFullName;
         }
+    }
+
+    internal static class AttributeSyntaxExtensions
+    {
+        internal static string GetDefaultValue(this AttributeSyntax attributeSyntax)
+            => attributeSyntax.ArgumentList
+                .Arguments
+                .FirstOrDefault()
+                ?.Expression
+                ?.ToString();
+
+        internal static string GetDefaultValueString(this AttributeSyntax attributeSyntax)
+            => attributeSyntax.GetDefaultValue()
+                .Replace("\"", "");
     }
 }

@@ -16,5 +16,14 @@ namespace EasyBuilder.NET.Attributes
         public class IgnoreMember : Attribute
         {
         }
+
+        [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false)]
+        public class MethodName : Attribute
+        {
+            public MethodName(string name)
+                => Name = name;
+
+            public string Name { get; set; }
+        }
     }
 }
